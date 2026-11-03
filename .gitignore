@@ -1,0 +1,51 @@
+# Local connection details and SSH material
+profile*.json
+!profile.example.json
+profile*.json.tmp
+.env
+.env.*
+!.env.example
+.ssh/
+*.pem
+*.key
+*.pub
+*.p12
+*.pfx
+id_rsa*
+id_ed25519*
+known_hosts*
+authorized_keys*
+credentials*
+secrets*
+
+# Runtime observations, downloads, screenshots and local history
+*.log
+last-*.json
+integration-results.json
+test-download-result.json
+preview-*.png
+screenshots/
+downloads/
+backup*/
+*.lnk
+*.zip
+*.part
+
+# Python and packaging
+__pycache__/
+*.py[cod]
+.test-tmp/
+.pytest_cache/
+.venv/
+venv/
+build/
+dist/
+*.spec
+*.exe
+
+# Machine and editor state
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+desktop.ini
