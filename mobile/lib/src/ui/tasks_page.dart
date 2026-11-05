@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../services/monitor_controller.dart';
 import 'files_page.dart';
 import 'shared.dart';
+import 'preview_navigation.dart';
 
 class TasksPage extends StatefulWidget {
   const TasksPage({super.key, required this.controller});
@@ -274,6 +275,13 @@ class TaskDetailPage extends StatelessWidget {
                 errors.join('\n'),
                 style: const TextStyle(color: clay, fontSize: 12, height: 1.6),
               ),
+            ),
+          ],
+          if (textValue(job['path'], '').isNotEmpty) ...[
+            const SectionTitle('模型与结果'),
+            TaskModelPreview(
+              controller: controller,
+              path: textValue(job['path']),
             ),
           ],
           const SectionTitle('日志与文件'),

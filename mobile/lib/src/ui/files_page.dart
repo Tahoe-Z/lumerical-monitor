@@ -6,6 +6,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../services/monitor_controller.dart';
 import 'shared.dart';
+import 'preview_navigation.dart';
 
 class FilesPage extends StatefulWidget {
   const FilesPage({super.key, required this.controller});
@@ -82,6 +83,15 @@ class _FilesPageState extends State<FilesPage> {
                 style: Theme.of(context).textTheme.bodySmall,
               ),
               const SizedBox(height: 20),
+              if (path.toLowerCase().endsWith('.fsp') ||
+                  path.toLowerCase().endsWith('.lms'))
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.view_in_ar_outlined),
+                  title: const Text('模型、模场与 T 结果'),
+                  subtitle: const Text('读取已保存的模型与仿真结果预览'),
+                  onTap: () => Navigator.pop(context, 'simulation'),
+                ),
               ListTile(
                 contentPadding: EdgeInsets.zero,
                 leading: const Icon(Icons.article_outlined),
@@ -102,7 +112,9 @@ class _FilesPageState extends State<FilesPage> {
       ),
     );
     if (!mounted || action == null) return;
-    if (action == 'preview') {
+    if (action == 'simulation') {
+      await openSimulationPreview(context, widget.controller, path);
+    } else if (action == 'preview') {
       await Navigator.push(
         context,
         MaterialPageRoute<void>(

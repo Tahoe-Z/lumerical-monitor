@@ -2,10 +2,10 @@ name: Mobile app
 
 on:
   push:
-    branches: [main, feature/mobile-app]
-    paths: ['mobile/**', 'tools/run_mobile_ssh_test.sh', '.github/workflows/mobile.yml', 'remote_probe.py']
+    branches: [main, feature/mobile-app, feature/mobile-previews]
+    paths: ['mobile/**', 'tools/run_mobile_ssh_test.sh', '.github/workflows/mobile.yml', 'remote_probe.py', 'preview_export.py']
   pull_request:
-    paths: ['mobile/**', 'tools/run_mobile_ssh_test.sh', '.github/workflows/mobile.yml', 'remote_probe.py']
+    paths: ['mobile/**', 'tools/run_mobile_ssh_test.sh', '.github/workflows/mobile.yml', 'remote_probe.py', 'preview_export.py']
   workflow_dispatch:
 
 permissions:
@@ -36,6 +36,7 @@ jobs:
       - name: Check shared probe and desktop tests
         run: |
           cmp remote_probe.py mobile/assets/remote_probe.py
+          cmp preview_export.py mobile/assets/preview_export.py
           python3 -m unittest discover -v
       - name: Get locked mobile dependencies
         working-directory: mobile
@@ -48,17 +49,26 @@ jobs:
           flutter test
       - name: Test real SSH with ephemeral generated keys
         run: bash tools/run_mobile_ssh_test.sh
-      - name: Build ARM64 Android APK
+      - name: Compile unsigned ARM64 Android APK (not an installable upgrade)
         working-directory: mobile
         run: flutter build apk --release --target-platform android-arm64
+      - name: Ensure CI does not publish a random signing identity
+        shell: bash
+        run: |
+          signing_tool="$(find "$ANDROID_HOME/build-tools" -name apksigner | sort -V | tail -1)"
+          if "$signing_tool" verify mobile/build/app/outputs/flutter-apk/app-release.apk >/dev/null 2>&1; then
+            echo 'Expected an unsigned compilation artifact; refusing unexpected signed APK.'
+            exit 1
+          fi
       - uses: actions/upload-artifact@v4
         with:
-          name: lumerical-monitor-android-${{ github.sha }}
+          name: lumerical-monitor-android-UNSIGNED-${{ github.sha }}
           path: mobile/build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
           retention-days: 14
 
   ios:
+    if: github.head_ref != 'feature/mobile-previews' && github.ref_name != 'feature/mobile-previews'
     name: Unsigned iOS simulator and IPA build
     runs-on: macos-15
     timeout-minutes: 30

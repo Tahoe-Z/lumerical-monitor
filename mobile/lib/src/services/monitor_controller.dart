@@ -324,6 +324,63 @@ class MonitorController extends ChangeNotifier {
 
   Future<Map<String, dynamic>> listFiles(String path) => _read('list', path);
   Future<Map<String, dynamic>> readLog(String path) => _read('tail', path);
+  Future<Map<String, dynamic>> readPreview(String path) async {
+    if (isDemo) {
+      return {
+        'available': false,
+        'message': '演示模式没有真实模型与结果，请连接服务器后读取',
+        'projects': <String>[],
+      };
+    }
+    return _read('preview', path);
+  }
+
+  bool isPreviewRunning(String path) {
+    final jobs = _snapshot?['jobs'];
+    if (jobs is! List) return false;
+    return jobs.whereType<Map>().any((job) {
+      final pids = job['pids'];
+      if (!(pids is List && pids.isNotEmpty) && job['state'] != '运行中') {
+        return false;
+      }
+      final target = '${job['path'] ?? ''}';
+      return target == path ||
+          job['kind'] == 'pipeline' &&
+              (target == '.' ||
+                  target.isNotEmpty && path.startsWith('$target/'));
+    });
+  }
+
+  Future<Map<String, dynamic>> generatePreview(
+    String path,
+    double wavelengthM,
+    double zM,
+  ) async {
+    if (isDemo) throw const MonitorException('演示模式无法生成真实仿真预览');
+    if (isPreviewRunning(path)) throw const MonitorException('任务正在运行，仅可读取已有缓存');
+    final remote = _remote;
+    if (_phase != ConnectionPhase.connected || remote is! PreviewRemote) {
+      throw const MonitorException('请先连接服务器');
+    }
+    final generation = _generation;
+    final result = await (remote as PreviewRemote).preparePreview(
+      path,
+      wavelengthM,
+      zM,
+    );
+    if (!_current(generation)) throw const MonitorCancelled();
+    return result;
+  }
+
+  Future<void> cancelPreview() async {
+    final remote = _remote;
+    if (remote is PreviewRemote) {
+      try {
+        await (remote as PreviewRemote).cancelPreview();
+      } catch (_) {}
+    }
+  }
+
   Future<Map<String, dynamic>> _read(String operation, String path) async {
     if (isDemo) return operation == 'list' ? demoFiles(path) : demoLog(path);
     final remote = _remote;
