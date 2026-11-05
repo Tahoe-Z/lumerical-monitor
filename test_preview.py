@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import numpy as np
@@ -11,6 +12,25 @@ from preview_plot import render_preview
 
 
 class PreviewTests(unittest.TestCase):
+    def test_running_guard_uses_latest_snapshot_and_pipeline_descendants(self):
+        from app import Monitor
+        monitor = SimpleNamespace(snapshot={'jobs': [{'path': 'batch', 'kind': 'pipeline', 'pids': [123]}]})
+        self.assertTrue(Monitor._preview_is_running(monitor, 'batch/sample.fsp'))
+        self.assertFalse(Monitor._preview_is_running(monitor, 'another/sample.fsp'))
+        monitor.snapshot = {'jobs': []}
+        self.assertFalse(Monitor._preview_is_running(monitor, 'batch/sample.fsp'))
+
+    def test_bundled_interpreter_is_used_when_system_numpy_is_missing(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            api = root / 'api' / 'python' / 'lumapi.py'
+            api.parent.mkdir(parents=True)
+            api.write_text('# synthetic')
+            python = root / 'python' / 'bin' / 'python3'
+            python.parent.mkdir(parents=True)
+            python.write_text('# synthetic')
+            with patch.object(preview, '_api_candidates', return_value=[api]), patch('preview_export.importlib.util.find_spec', return_value=None), patch('preview_export.os.access', return_value=True), patch.dict('os.environ', {'LUMERICAL_PYTHON': ''}):
+                self.assertEqual(preview.preview_interpreter(), python)
     def test_missing_cache_and_stale_source_are_explicit(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)

@@ -405,20 +405,41 @@ def extract_session(session, project, root, wavelength_m=1.55e-6, z_m=0):
     return doc
 
 
+def _api_candidates():
+    candidates = []
+    custom = os.environ.get('LUMERICAL_API_DIR')
+    if custom:
+        candidates.append(Path(custom) / 'lumapi.py')
+    for parent, pattern in [(Path('/opt/lumerical'), 'v*/api/python/lumapi.py'),
+                            (Path('/opt/ansys_inc'), 'v*/Lumerical/api/python/lumapi.py'),
+                            (Path.home() / 'ansys_inc', 'v*/Lumerical/api/python/lumapi.py'),
+                            (Path.home() / 'Ansys/ansys_inc', 'v*/Lumerical/api/python/lumapi.py')]:
+        candidates.extend(sorted(parent.glob(pattern), reverse=True))
+    return candidates
+
+
+def preview_interpreter():
+    """Use existing Lumerical Python if system Python has no numerical modules."""
+    custom = os.environ.get('LUMERICAL_PYTHON')
+    if custom:
+        path = Path(custom)
+        if path.is_file() and os.access(path, os.X_OK) and path.resolve() != Path(sys.executable).resolve():
+            return path
+    if importlib.util.find_spec('numpy') is not None:
+        return None
+    for api in _api_candidates():
+        for name in ('python3', 'python'):
+            path = api.parents[2] / 'python' / 'bin' / name
+            if path.is_file() and os.access(path, os.X_OK) and path.resolve() != Path(sys.executable).resolve():
+                return path
+    return None
+
+
 def _api_session(suffix):
     try:
         lumapi = importlib.import_module('lumapi')
     except ImportError:
-        candidates = []
-        custom = os.environ.get('LUMERICAL_API_DIR')
-        if custom:
-            candidates.append(Path(custom) / 'lumapi.py')
-        for parent, pattern in [(Path('/opt/lumerical'), 'v*/api/python/lumapi.py'),
-                                (Path('/opt/ansys_inc'), 'v*/Lumerical/api/python/lumapi.py'),
-                                (Path.home() / 'ansys_inc', 'v*/Lumerical/api/python/lumapi.py'),
-                                (Path.home() / 'Ansys/ansys_inc', 'v*/Lumerical/api/python/lumapi.py')]:
-            candidates.extend(sorted(parent.glob(pattern), reverse=True))
-        found = next((item for item in candidates if item.is_file()), None)
+        found = next((item for item in _api_candidates() if item.is_file()), None)
         if found is None:
             raise RuntimeError('服务器 Python 未找到 lumapi；请配置 LUMERICAL_API_DIR 和 NumPy，或在已有仿真会话中导出预览')
         sys.path.insert(0, str(found.parent))
@@ -465,9 +486,15 @@ def export_from_session(session, root, project, wavelength_m=1.55e-6, z_m=0):
     return write_preview(root, selected, extract_session(session, selected, root, wavelength_m, z_m))
 
 
-def emit(request):
+def emit(request, source=None):
     """One explicit SSH tool request. Redirect API chatter away from its reply marker."""
     import contextlib
+    if source and os.name != 'nt':
+        python = preview_interpreter()
+        if python:
+            # Replace this process, retaining SSH stdin/stdout and cancellation signals.
+            code = f"_ns={{'__name__':'preview_tool'}}\nexec({source!r},_ns)\n_ns['emit']({request!r})\n"
+            os.execv(str(python), [str(python), '-c', code])
     previous = {}
     def interrupted(signum, frame):
         raise RuntimeError('预览会话已取消或超时')

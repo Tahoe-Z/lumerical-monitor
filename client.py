@@ -260,7 +260,7 @@ class Client:
         payload = base64.b64encode(json.dumps(request).encode()).decode('ascii')
         helper = (RESOURCES/'preview_export.py').read_text(encoding='utf-8')
         script = ("import json,base64\n_ns={'__name__':'preview_tool'}\n"
-                  f"exec({helper!r},_ns)\n_ns['emit'](json.loads(base64.b64decode('{payload}')))\n")
+                  f"_source={helper!r}\nexec(_source,_ns)\n_ns['emit'](json.loads(base64.b64decode('{payload}')),source=_source)\n")
         process = subprocess.Popen(ssh_command(self.profile), stdin=subprocess.PIPE,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, creationflags=NO_WINDOW)
         finished = threading.Event()

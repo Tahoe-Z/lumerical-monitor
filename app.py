@@ -631,12 +631,7 @@ class Monitor(tk.Tk):
     def _select_preview(self,path,running=False,open_page=False,force=False):
         if not path:
             return
-        if not running and self.snapshot:
-            for job in self.snapshot.get('jobs',[]):
-                if job.get('pids') and (job.get('path')==path or
-                    job.get('kind')=='pipeline' and PurePosixPath(path).is_relative_to(PurePosixPath(job['path']))):
-                    running=True
-                    break
+        running=running or self._preview_is_running(path)
         if open_page:
             self.show_page('preview')
         self.preview_running=running
@@ -679,10 +674,16 @@ class Monitor(tk.Tk):
                 self._select_preview(pending[0],running=pending[1],force=True)
         self.submit('preview-cache',work,done)
 
+    def _preview_is_running(self,path):
+        return any(job.get('pids') and (job.get('path')==path or
+                   job.get('kind')=='pipeline' and PurePosixPath(path).is_relative_to(PurePosixPath(job['path'])))
+                   for job in (self.snapshot or {}).get('jobs',[]))
+
     def _prepare_preview(self,path,wavelength_m,z_m):
         if self.offline or not path:
             self.preview_view.error('请先连接服务器并选择工程文件')
             return
+        self.preview_running=self._preview_is_running(path)
         if self.preview_running:
             self.preview_view.error('任务运行中仅显示已保存缓存；请完成并保存工程后生成新预览')
             return
@@ -1123,6 +1124,11 @@ class Monitor(tk.Tk):
         recovered=self.failed_streak>0 and self.snapshot is not None
         first=self.snapshot is None
         self.snapshot=data
+        if self.preview_target:
+            self.preview_running=self._preview_is_running(self.preview_path or self.preview_target)
+            for panel in (self.task_preview,self.preview_view):
+                panel.set_running(self.preview_running)
+            self.preview_view.generate_button.set_enabled(not self.preview_running and 'preview-build' not in self.busy)
         self.last_success=time.monotonic()
         self.failed_streak=0
         self._set_connection('ok',f'已连接 · {data["hostname"]}')
