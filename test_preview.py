@@ -138,6 +138,22 @@ class PreviewTests(unittest.TestCase):
             self.assertEqual(doc['model']['layers'][0]['polygons'][0]['contours'][0], geometry['1:0'][0].tolist())
             self.assertTrue(any('GDS' in warning for warning in doc['warnings']))
 
+    def test_polystencil_receives_numeric_matrix_for_z_not_cell_array(self):
+        class Session(FakeSession):
+            def groupscope(self, value=None):
+                return '::model'
+            def getAllSelectedObjects(self):
+                return [{'name': 'core', 'type': 'Polygon', 'material': 'Silicon'}]
+            def polystencil(self, request):
+                if not isinstance(request['z'], np.ndarray):
+                    raise ValueError('z must be a numeric matrix, not a cell array')
+                return [[[np.array([[0, 0], [1e-6, 0], [0, 1e-6]])]]]
+        with tempfile.TemporaryDirectory() as folder:
+            project = Path(folder) / 'sample.fsp'
+            project.write_bytes(b'synthetic')
+            doc = preview.extract_session(Session(), project, folder)
+            self.assertEqual(len(doc['model']['layers']), 1)
+
     def test_invalid_nonfinite_or_oversized_cache_is_rejected(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)

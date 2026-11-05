@@ -339,7 +339,7 @@ def extract_session(session, project, root, wavelength_m=1.55e-6, z_m=0):
             materials.add(material)
     for material in sorted(materials)[:32]:
         try:
-            raw = session.polystencil({'material': material, 'partialname': '', 'z': [float(z_m)],
+            raw = session.polystencil({'material': material, 'partialname': '', 'z': np.asarray([float(z_m)]),
                                       'options': {'ignore_disabled': True, 'curve_chord_tol': 1e-9}})
             polygons = _contours(raw)
             if polygons:
