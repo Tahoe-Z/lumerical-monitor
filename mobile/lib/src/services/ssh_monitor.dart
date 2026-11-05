@@ -330,7 +330,6 @@ class SshMonitor implements RemoteMonitor {
           utf8.encode('${base64Encode(utf8.encode('$probe\n$_serveCode'))}\n'),
         ),
       );
-      await token.wait(session.flush().timeout(requestTimeout));
       final ready = decodeReply(
         await token.wait(lines.next().timeout(requestTimeout)),
       );
@@ -367,7 +366,6 @@ class SshMonitor implements RemoteMonitor {
         session.stdin.add(
           Uint8List.fromList(utf8.encode('${jsonEncode(payload)}\n')),
         );
-        await token.wait(session.flush().timeout(requestTimeout));
         final reply = decodeReply(
           await token.wait(lines.next().timeout(requestTimeout)),
         );
