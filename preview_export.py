@@ -450,6 +450,11 @@ def _api_session(suffix):
     arguments = {'threads': '1'}
     if os.name != 'nt':
         arguments['platform'] = 'offscreen'
+        # Optional user-managed runtime libraries; never install system packages.
+        library_dir = Path(os.environ.get('LUMERICAL_LIBRARY_DIR') or Path.home() / '.cache/lumerical-monitor/runtime-libs')
+        if library_dir.is_dir():
+            previous = os.environ.get('LD_LIBRARY_PATH', '')
+            os.environ['LD_LIBRARY_PATH'] = str(library_dir) + (os.pathsep + previous if previous else '')
     return constructor(hide=True, serverArgs=arguments)
 
 

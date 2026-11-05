@@ -12,6 +12,8 @@
 
 服务器需有能导入 NumPy 和 `lumapi` 的 Python。系统 Python 缺少 NumPy 时，生成工具会尝试使用已安装的 Lumerical 自带 Python。常用安装目录会被发现；非标准路径可通过服务器 `LUMERICAL_API_DIR` 指向含 `lumapi.py` 的目录，或用 `LUMERICAL_PYTHON` 指定解释器。监控程序不会自动安装依赖或修改服务器环境。
 
+Linux 服务器也需要 Lumerical GUI 的共享库。可由使用者提供 `LUMERICAL_LIBRARY_DIR`，或将所需库放在用户目录的 `.cache/lumerical-monitor/runtime-libs` 下；该目录只对预览进程生效。程序不自动下载这些库。
+
 生成器使用 Lumerical `polystencil` 导出材料在指定 z 平面的真实轮廓，读取已保存 E/T 数据集。某版本不支持对应接口或工程未保存监视器结果时，会显示说明，不生成替代结果。总 T 保留方向符号，不会被强制限制在 0–1。
 
 如果 Layer Builder 的工艺结构无法枚举，会显示首个 Layer Builder 已保存的 GDS 图形，并明确标注局部坐标及其局限：这类图不包含工艺厚度、偏置和旋转，不代表所填 z 的材料截面。
