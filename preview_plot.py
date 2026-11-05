@@ -67,7 +67,8 @@ def render_preview(kind, entry, pixels=(1000, 620)):
             values = np.asarray(entry['values'], dtype=float)
             if wavelengths.ndim != 1 or values.shape != wavelengths.shape or not np.isfinite(wavelengths).all() or not np.isfinite(values).all():
                 raise ValueError('光谱数据维度或数值无效')
-            axis.plot(wavelengths * 1e9, values, color='#C6613F', linewidth=1.8)
+            axis.plot(wavelengths * 1e9, values, color='#C6613F', linewidth=1.8,
+                      marker='o' if len(values) <= 8 else None, markersize=5)
             axis.axhline(0, color='#A3A29B', linewidth=.6)
             axis.grid(alpha=.18)
             axis.set(xlabel='Wavelength (nm)', ylabel='Signed power transmission T', title=entry.get('name', 'Transmission'))

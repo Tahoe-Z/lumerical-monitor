@@ -42,11 +42,14 @@ def choose_project(root, path):
         return target, [target]
     if not target.is_dir():
         raise ValueError('预览对象不是普通工程文件或目录')
-    files, stack, visited = [], [(target, 0)], 0
-    while stack and visited < 100 and len(files) < 64:
+    files, stack, visited, scanned = [], [(target, 0)], 0, 0
+    while stack and visited < 100 and scanned < 10000 and len(files) < 64:
         folder, depth = stack.pop()
         visited += 1
         for entry in folder.iterdir():
+            scanned += 1
+            if scanned > 10000:
+                break
             if entry.is_symlink():
                 continue
             if entry.is_file() and entry.suffix.lower() in SUPPORTED:
