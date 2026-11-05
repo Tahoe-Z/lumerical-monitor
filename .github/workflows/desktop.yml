@@ -1,0 +1,40 @@
+name: Desktop preview app
+on:
+  push:
+    branches: [feature/desktop-previews, main]
+    paths: ['*.py', 'requirements-*.txt', 'build_app.ps1', '.github/workflows/desktop.yml']
+  pull_request:
+    paths: ['*.py', 'requirements-*.txt', 'build_app.ps1', '.github/workflows/desktop.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements-build.txt
+      - name: Install build dependencies
+        run: python -m pip install -r requirements-build.txt
+      - name: Verify read-only previews and existing monitor behavior
+        run: python -m unittest discover -v
+      - name: Build Windows desktop application
+        shell: pwsh
+        run: ./build_app.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lumerical-monitor-desktop-preview-${{ github.sha }}
+          path: dist/LumericalMonitor/
+          if-no-files-found: error
+          retention-days: 14

@@ -1,5 +1,7 @@
 # Lumerical Monitor
 
+桌面预览扩展：选中任务或 `.fsp` / `.lms` 后，可查看已保存的模型截面、模场、T 光谱及参数。首次生成需要相应 Lumerical API 和许可证；具体条件及大型工程导出方式见 [模型与结果说明](docs/preview-usage.md)。
+
 通过 SSH 查看远程 Linux 服务器上的 Ansys Lumerical 仿真状态的 Windows 桌面应用。使用 Python、Tkinter 和系统 OpenSSH，界面为中文。
 
 支持 FDTD、varFDTD、EME、FDE、CHARGE、HEAT 等求解器的进程识别与日志解析。运行时无需安装第三方 Python 包；远程探针通过 SSH 发送给 Python 执行，无需部署常驻服务。

@@ -16,6 +16,7 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
 from client import Client, Profile, HERE, RESOURCES, load_settings, save_settings, update_settings
+from preview_ui import PreviewPanel
 from ui_kit import (C, ICON, Theme, Card, Bar, Sparkline, Switch, IconButton, Table, SearchBox, Field,
                     Rounded, RoundButton, Chip, Toaster, Tooltip, mix, level_color, use_palette, dark_title_bar)
 
@@ -36,9 +37,11 @@ PAGES=[('overview','概览','整机资源与可见进程'),
        ('files','文件与日志','项目目录浏览、日志跟踪与安全下载'),
        ('gpu','GPU','NVIDIA 显卡状态与计算进程'),
        ('users','用户占用','共享服务器上各用户的资源占用'),
-       ('license','许可证','FlexLM 许可证服务器状态与席位占用（lmutil lmstat 只读查询，每分钟一次）')]
+       ('license','许可证','FlexLM 许可证服务器状态与席位占用（lmutil lmstat 只读查询，每分钟一次）'),
+       ('preview','模型与结果','已保存的模型截面、模场、透射谱和参数')]
+ICON['preview']=ICON['gpu']
 FOLLOW_SECONDS=5
-VERSION='v6'
+VERSION='v8-preview'
 LICENSE_TEXT={'lumerical_solve':'Lumerical 求解器 · 每个运行中的引擎占 1 个','anshpc_pack':'Ansys HPC 包 · 并行 / GPU 加速',
               'lumerical_gui':'Lumerical CAD / lumapi 会话','lum_fdtd_gui':'FDTD 图形界面','lum_mode_gui':'MODE 图形界面',
               'lum_interconnect_gui':'INTERCONNECT 图形界面','lum_multiphysics_gui':'Multiphysics（CHARGE / HEAT 等）图形界面',
@@ -213,6 +216,13 @@ class Monitor(tk.Tk):
         self.log_path=None
         self.log_loaded_at=0
         self.pending={}  # latest-wins follow-up request per key ('files' / 'tail')
+        self.preview_path=''
+        self.preview_target=''
+        self.preview_generation=0
+        self.preview_pending=None
+        self.preview_checked=0
+        self.preview_running=False
+        self.preview_cancel=threading.Event()
         self.task_filter='全部'
         self.solver_filter='全部'
         self.solver_chips={}
@@ -301,6 +311,7 @@ class Monitor(tk.Tk):
         self._build_gpu(self.pages['gpu'])
         self._build_users(self.pages['users'])
         self._build_license(self.pages['license'])
+        self._build_preview(self.pages['preview'])
 
     def _build_sidebar(self,side):
         t=self.theme
@@ -506,6 +517,7 @@ class Monitor(tk.Tk):
         buttons.pack(side='right')
         RoundButton(buttons,t,'查看日志',self.open_job_log,kind='primary').pack(side='right')
         RoundButton(buttons,t,'浏览目录',self.open_job).pack(side='right',padx=t.px(8))
+        RoundButton(buttons,t,'模型与结果',lambda:self.show_page('preview')).pack(side='right')
         row=tk.Frame(b,bg=C['surface'])
         row.pack(fill='x',pady=(t.px(10),0))
         chart=tk.Frame(row,bg=C['surface'])
@@ -516,6 +528,9 @@ class Monitor(tk.Tk):
         self.shutoff_spark.configure(width=t.px(300))
         self.shutoff_spark.marker=(self._shutoff_scale(1e-5),C['faint'])
         self.shutoff_spark.pack()
+        self.task_preview=PreviewPanel(chart,t,load=self._select_preview,
+            open_full=lambda:self.show_page('preview'),compact=True)
+        self.task_preview.pack(fill='x',pady=(t.px(8),0))
         info=tk.Frame(row,bg=C['surface'])
         info.pack(side='left',fill='both',expand=True)
         self.job_progress=tk.StringVar(value='')
@@ -552,7 +567,8 @@ class Monitor(tk.Tk):
         panes.add(viewer,weight=3)
         self.files_heading=listing.title_var
         self.file_table=Table(listing.body,t,[('name','名称',460,'w',True),('kind','类型',90),('size','大小',110,'e'),
-                                              ('mtime','修改时间',150,'e')],on_open=self.open_selected,empty='尚未读取目录')
+                                              ('mtime','修改时间',150,'e')],on_open=self.open_selected,
+                                              on_select=self._file_preview_selected,empty='尚未读取目录')
         self.file_table.pack(fill='both',expand=True)
         self.file_tree=self.file_table.tree
         self._context(self.file_table,lambda r:[('打开 / 查看',lambda:self.open_selected(r)),('下载…',self.download_selected),
@@ -600,6 +616,109 @@ class Monitor(tk.Tk):
         self.log.tag_configure('current',background=C['amber'],foreground='#111111')
         self.log.tag_raise('match')
         self.log.tag_raise('current')
+
+    def _build_preview(self,page):
+        card=Card(page,self.theme,title='模型与结果 · 预览缓存')
+        card.pack(fill='both',expand=True)
+        self.preview_view=PreviewPanel(card.body,self.theme,load=lambda path:self._select_preview(path,force=True),
+                                       generate=self._prepare_preview)
+        self.preview_view.pack(fill='both',expand=True)
+
+    def _file_preview_selected(self,row):
+        if self.page=='files' and row and not row['data'].get('directory') and Path(row['data']['path']).suffix.lower() in {'.fsp','.lms'}:
+            self._select_preview(row['data']['path'],open_page=True)
+
+    def _select_preview(self,path,running=False,open_page=False,force=False):
+        if not path:
+            return
+        if not running and self.snapshot:
+            for job in self.snapshot.get('jobs',[]):
+                if job.get('pids') and (job.get('path')==path or
+                    job.get('kind')=='pipeline' and PurePosixPath(path).is_relative_to(PurePosixPath(job['path']))):
+                    running=True
+                    break
+        if open_page:
+            self.show_page('preview')
+        self.preview_running=running
+        for panel in (self.task_preview,self.preview_view):
+            panel.set_running(running)
+        if not force and path==self.preview_target and time.monotonic()-self.preview_checked<60:
+            return
+        self.preview_target=path
+        self.preview_path=path
+        self.preview_generation+=1
+        generation=self.preview_generation
+        for panel in (self.task_preview,self.preview_view):
+            panel.loading(path)
+        if self.offline:
+            for panel in (self.task_preview,self.preview_view):
+                panel.status.set('离线界面：连接服务器后读取已保存预览')
+            return
+        if 'preview-cache' in self.busy:
+            self.preview_pending=(path,running)
+            return
+        client=self.client
+        def work():
+            try:
+                return client.request('preview',path)
+            except Exception as error:
+                return {'_error':str(error)}
+        def done(info):
+            if client is self.client and generation==self.preview_generation:
+                self.preview_checked=time.monotonic()
+                if '_error' in info:
+                    for panel in (self.task_preview,self.preview_view):
+                        panel.error(info['_error'])
+                else:
+                    self.preview_path=info.get('project',path)
+                    for panel in (self.task_preview,self.preview_view):
+                        panel.set_document(info)
+            pending=self.preview_pending
+            self.preview_pending=None
+            if pending:
+                self._select_preview(pending[0],running=pending[1],force=True)
+        self.submit('preview-cache',work,done)
+
+    def _prepare_preview(self,path,wavelength_m,z_m):
+        if self.offline or not path:
+            self.preview_view.error('请先连接服务器并选择工程文件')
+            return
+        if self.preview_running:
+            self.preview_view.error('任务运行中仅显示已保存缓存；请完成并保存工程后生成新预览')
+            return
+        if 'preview-build' in self.busy:
+            self.activity.set('预览正在生成，请稍候。')
+            return
+        if not math.isfinite(wavelength_m) or wavelength_m<=0 or not math.isfinite(z_m):
+            self.preview_view.error('波长和截面参数无效')
+            return
+        if not messagebox.askyesno('生成模型与结果预览',
+            '将在服务器新开一个隐藏的 Lumerical 会话读取已保存工程，可能占用 GUI 许可证。\n\n'
+            '此操作只写入该工程旁的 .preview.json 缓存，不重新求解、不保存覆盖原工程。\n'
+            '大型工程建议在已有仿真脚本中导出。是否继续？',parent=self):
+            return
+        self.preview_cancel.clear()
+        self.preview_view.generate_button.set_enabled(False)
+        self.preview_view.status.set('正在读取工程并准备预览；原工程保持不变…')
+        generation=self.preview_generation
+        client=self.client
+        def work():
+            try:
+                return client.prepare_preview(path,wavelength_m=wavelength_m,z_m=z_m,cancel=self.preview_cancel)
+            except Exception as error:
+                return {'_error':str(error)}
+        def done(info):
+            self.preview_view.generate_button.set_enabled(not self.preview_running)
+            if client is not self.client or generation!=self.preview_generation:
+                return
+            if '_error' in info:
+                self.preview_view.error(info['_error'])
+                return
+            for panel in (self.task_preview,self.preview_view):
+                panel.set_document(info)
+            self.preview_checked=time.monotonic()
+            self.activity.set('模型与结果预览已更新。')
+        self.submit('preview-build',work,done)
 
     def _build_gpu(self,page):
         t=self.theme
@@ -1415,6 +1534,8 @@ class Monitor(tk.Tk):
             self.job_alert.set('')
             return
         j=row['data']
+        if j.get('dir') is not None and (self.page=='tasks' or not self.preview_target):
+            self._select_preview(j['path'],running=j.get('state')=='运行中')
         color=C['amber'] if j.get('stalled') else C.get(STATE_TAG.get(j['state'],''),C['sub'])
         self.job_name.set(j['path'])
         self.job_state_label.configure(text=j['state'],fg=color,bg=mix(C['surface'],color,.18))
@@ -1627,7 +1748,10 @@ class Monitor(tk.Tk):
         if not entry or entry['directory']:
             self.activity.set('请先选中一个文件。')
             return
-        self.open_log(entry['path'])
+        if Path(entry['path']).suffix.lower() in {'.fsp','.lms'}:
+            self._select_preview(entry['path'],open_page=True)
+        else:
+            self.open_log(entry['path'])
 
     def open_log(self,path):
         if Path(path).suffix.lower() not in TEXT_SUFFIXES:
@@ -1867,6 +1991,14 @@ class Monitor(tk.Tk):
         if self.next_refresh is not None:
             self.next_refresh=min(self.next_refresh,time.monotonic()+interval)
         if changed:
+            self.preview_cancel.set()
+            self.preview_generation+=1
+            self.preview_path=self.preview_target=''
+            self.preview_pending=None
+            self.preview_running=False
+            for panel in (self.task_preview,self.preview_view):
+                panel.set_running(False)
+                panel.set_document({'available':False,'project':'','projects':[], 'message':'连接已切换，请重新选择工程文件'})
             threading.Thread(target=self.client.close,daemon=True).start()
             self.client=Client(profile)
             self._update_host_text()
@@ -1899,6 +2031,8 @@ class Monitor(tk.Tk):
         self.closing=True
         self.auto.set(False)
         self.cancel_download.set()
+        if getattr(self,'preview_cancel',None) is not None:
+            self.preview_cancel.set()
         self.activity.set('正在取消下载并清理本地临时文件，请稍候…')
         self._finish_close()
 

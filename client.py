@@ -1,4 +1,4 @@
-"""Local OpenSSH transport. No shell interpolation and no remote mutations."""
+"""Local OpenSSH transport; previews write a sidecar only on explicit request."""
 import base64
 from dataclasses import dataclass, asdict
 import json
@@ -18,6 +18,16 @@ NO_WINDOW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
 
 
 HERE = Path(sys.executable).resolve().parent if getattr(sys,'frozen',False) else RESOURCES
+
+
+def remote_source():
+    """Send the public preview helper as an in-memory module, without installing files remotely."""
+    helper = (RESOURCES/'preview_export.py').read_text(encoding='utf-8')
+    loader = ("import types as _types, sys as _sys\n"
+              "_preview_module = _types.ModuleType('preview_export')\n"
+              f"exec({helper!r}, _preview_module.__dict__)\n"
+              "_sys.modules['preview_export'] = _preview_module\n")
+    return loader + (RESOURCES/'remote_probe.py').read_text(encoding='utf-8')
 
 
 @dataclass(frozen=True)
@@ -140,7 +150,7 @@ class Session:
         threading.Thread(target=pump_out,daemon=True).start()
         threading.Thread(target=pump_err,daemon=True).start()
         self.proc, self.lines, self.errors = proc, lines, errors
-        source = (RESOURCES/'remote_probe.py').read_text(encoding='utf-8')+'\n'+SERVE_CODE
+        source = remote_source()+'\n'+SERVE_CODE
         try:
             proc.stdin.write(base64.b64encode(source.encode())+b'\n')
             proc.stdin.flush()
@@ -217,7 +227,7 @@ class Session:
 
 
 def remote_script(request):
-    source = (RESOURCES/'remote_probe.py').read_text(encoding='utf-8')
+    source = remote_source()
     payload = base64.b64encode(json.dumps(request).encode()).decode()
     return source+'\nimport base64\nmain(json.loads(base64.b64decode("'+payload+'")))\n'
 
@@ -241,6 +251,43 @@ class Client:
     def close(self):
         if self.session:
             self.session.shutdown()
+
+    def prepare_preview(self, path, *, wavelength_m=1.55e-6, z_m=0, cancel=None):
+        """Explicit licensed analysis in a separate SSH connection; writes only a preview sidecar."""
+        from preview_export import REPLY_MARKER
+        cancel = cancel or threading.Event()
+        request = {'root': self.profile.root, 'path': path, 'wavelength_m': wavelength_m, 'z_m': z_m}
+        payload = base64.b64encode(json.dumps(request).encode()).decode('ascii')
+        helper = (RESOURCES/'preview_export.py').read_text(encoding='utf-8')
+        script = ("import json,base64\n_ns={'__name__':'preview_tool'}\n"
+                  f"exec({helper!r},_ns)\n_ns['emit'](json.loads(base64.b64decode('{payload}')))\n")
+        process = subprocess.Popen(ssh_command(self.profile), stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, creationflags=NO_WINDOW)
+        finished = threading.Event()
+        def watch():
+            while not finished.wait(.2):
+                if cancel.is_set():
+                    process.kill()
+                    return
+        threading.Thread(target=watch,daemon=True).start()
+        try:
+            stdout, stderr = process.communicate(script.encode('utf-8'), timeout=180)
+            if cancel.is_set():
+                raise RuntimeError('预览生成已取消')
+            marker = next((line[len(REPLY_MARKER):] for line in stdout.decode('utf-8','replace').splitlines()[::-1]
+                           if line.startswith(REPLY_MARKER)), None)
+            if marker is None:
+                raise RuntimeError('预览导出器未返回有效数据；请检查远端 lumapi、NumPy 和许可证配置')
+            reply = json.loads(zlib.decompress(base64.b64decode(marker)))
+            if not reply.get('ok'):
+                raise RuntimeError(reply.get('error','预览生成失败'))
+            return reply['data']
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.communicate()
+            raise RuntimeError('预览生成超过 180 秒；请在已有仿真会话中导出预览') from None
+        finally:
+            finished.set()
 
     def request_once(self, op, path='.', **options):
         script = remote_script({**options,'op':op,'root':self.profile.root,'path':path})
