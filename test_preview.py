@@ -1,4 +1,6 @@
 import json
+import base64
+import zlib
 from pathlib import Path
 import tempfile
 import unittest
@@ -12,6 +14,28 @@ from preview_plot import render_preview
 
 
 class PreviewTests(unittest.TestCase):
+    def test_preview_transport_accepts_complete_reply_after_api_chatter(self):
+        from client import Client
+        data = {'available': False, 'message': 'synthetic response'}
+        encoded = base64.b64encode(zlib.compress(json.dumps({'ok': True, 'data': data}).encode()))
+        process = SimpleNamespace(returncode=0, communicate=lambda *a, **k: (b'API message\nLUMERICAL_PREVIEW_V1:' + encoded + b'\n', b''), kill=lambda: None)
+        with patch('client.subprocess.Popen', return_value=process):
+            self.assertEqual(Client(persistent=False).prepare_preview('sample.fsp'), data)
+
+    def test_interrupted_preview_connection_is_reported_before_decoding(self):
+        from client import Client
+        process = SimpleNamespace(returncode=255, communicate=lambda *a, **k: (b'LUMERICAL_PREVIEW_V1:abc', b'connection closed'), kill=lambda: None)
+        with patch('client.subprocess.Popen', return_value=process):
+            with self.assertRaisesRegex(RuntimeError, '连接中断'):
+                Client(persistent=False).prepare_preview('sample.fsp')
+
+    def test_incomplete_preview_reply_has_recoverable_message(self):
+        from client import Client
+        process = SimpleNamespace(returncode=0, communicate=lambda *a, **k: (b'LUMERICAL_PREVIEW_V1:abc', b''), kill=lambda: None)
+        with patch('client.subprocess.Popen', return_value=process):
+            with self.assertRaisesRegex(RuntimeError, '读取缓存'):
+                Client(persistent=False).prepare_preview('sample.fsp')
+
     def test_running_guard_uses_latest_snapshot_and_pipeline_descendants(self):
         from app import Monitor
         monitor = SimpleNamespace(snapshot={'jobs': [{'path': 'batch', 'kind': 'pipeline', 'pids': [123]}]})

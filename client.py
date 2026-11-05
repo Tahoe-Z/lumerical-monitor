@@ -274,11 +274,18 @@ class Client:
             stdout, stderr = process.communicate(script.encode('utf-8'), timeout=180)
             if cancel.is_set():
                 raise RuntimeError('预览生成已取消')
+            if process.returncode:
+                raise RuntimeError('预览连接中断，导出可能已完成；请点击“读取缓存”重试')
             marker = next((line[len(REPLY_MARKER):] for line in stdout.decode('utf-8','replace').splitlines()[::-1]
                            if line.startswith(REPLY_MARKER)), None)
             if marker is None:
                 raise RuntimeError('预览导出器未返回有效数据；请检查远端 lumapi、NumPy 和许可证配置')
-            reply = json.loads(zlib.decompress(base64.b64decode(marker)))
+            try:
+                reply = json.loads(zlib.decompress(base64.b64decode(marker, validate=True)))
+            except (ValueError, zlib.error):
+                raise RuntimeError('预览响应不完整；请点击“读取缓存”重试') from None
+            if not isinstance(reply, dict):
+                raise RuntimeError('预览响应格式无效；请点击“读取缓存”重试')
             if not reply.get('ok'):
                 raise RuntimeError(reply.get('error','预览生成失败'))
             return reply['data']
