@@ -2,6 +2,8 @@
 
 通过 SSH 查看远程 Linux 服务器上的 Ansys Lumerical 仿真状态的 Windows 桌面应用。使用 Python、Tkinter 和系统 OpenSSH，界面为中文。
 
+Android / iOS 手机端位于 [`mobile/`](mobile/README.md)：手机直接 SSH 连接、平台安全存储、前台刷新，复用同一个只读服务器探针。具体构建和 iPhone 签名要求见手机端说明。
+
 支持 FDTD、varFDTD、EME、FDE、CHARGE、HEAT 等求解器的进程识别与日志解析。运行时无需安装第三方 Python 包；远程探针通过 SSH 发送给 Python 执行，无需部署常驻服务。
 
 ## 功能
