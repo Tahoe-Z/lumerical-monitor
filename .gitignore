@@ -11,6 +11,11 @@ profile*.json.tmp
 *.pub
 *.p12
 *.pfx
+*.jks
+*.keystore
+*.mobileprovision
+*.p8
+key.properties
 id_rsa*
 id_ed25519*
 known_hosts*

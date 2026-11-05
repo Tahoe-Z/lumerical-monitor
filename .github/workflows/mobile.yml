@@ -1,0 +1,91 @@
+name: Mobile app
+
+on:
+  push:
+    branches: [main, feature/mobile-app]
+    paths: ['mobile/**', 'tools/run_mobile_ssh_test.sh', '.github/workflows/mobile.yml', 'remote_probe.py']
+  pull_request:
+    paths: ['mobile/**', 'tools/run_mobile_ssh_test.sh', '.github/workflows/mobile.yml', 'remote_probe.py']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-${{ github.event_name }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  android:
+    name: Tests, SSH integration and Android APK
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.9'
+          channel: stable
+          cache: true
+      - name: Install local test services
+        run: sudo apt-get update -qq && sudo apt-get install -y openssh-server python3-tk
+      - name: Check shared probe and desktop tests
+        run: |
+          cmp remote_probe.py mobile/assets/remote_probe.py
+          python3 -m unittest discover -v
+      - name: Get locked mobile dependencies
+        working-directory: mobile
+        run: flutter pub get --enforce-lockfile
+      - name: Format, analyze and test
+        working-directory: mobile
+        run: |
+          dart format --output=none --set-exit-if-changed lib test
+          flutter analyze
+          flutter test
+      - name: Test real SSH with ephemeral generated keys
+        run: bash tools/run_mobile_ssh_test.sh
+      - name: Build ARM64 Android APK
+        working-directory: mobile
+        run: flutter build apk --release --target-platform android-arm64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lumerical-monitor-android-${{ github.sha }}
+          path: mobile/build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+          retention-days: 14
+
+  ios:
+    name: Unsigned iOS simulator and IPA build
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.9'
+          channel: stable
+          cache: true
+      - name: Get locked mobile dependencies
+        working-directory: mobile
+        run: flutter pub get --enforce-lockfile
+      - name: Compile iOS simulator app without personal signing
+        working-directory: mobile
+        run: flutter build ios --simulator --debug --no-codesign
+      - name: Build unsigned iOS release IPA for sideloading
+        working-directory: mobile
+        run: |
+          flutter build ios --release --no-codesign
+          mkdir -p build/ios/ipa_stage/Payload
+          cp -R build/ios/iphoneos/Runner.app build/ios/ipa_stage/Payload/Runner.app
+          cd build/ios/ipa_stage
+          zip -qry ../lumerical-monitor-ios-unsigned.ipa Payload
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lumerical-monitor-ios-unsigned-${{ github.sha }}
+          path: mobile/build/ios/lumerical-monitor-ios-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 14
