@@ -208,10 +208,25 @@ class SshMonitor implements RemoteMonitor {
     Future<String> Function()? loadProbe,
     Future<Directory> Function()? downloadDirectory,
     this.requestTimeout = const Duration(seconds: 40),
-  }) : _loadProbe =
-           loadProbe ?? (() => rootBundle.loadString('assets/remote_probe.py')),
+  }) : _loadProbe = loadProbe ?? _defaultLoadProbe,
        _downloadDirectory =
            downloadDirectory ?? getApplicationDocumentsDirectory;
+
+  static Future<String> _defaultLoadProbe() async {
+    try {
+      return await rootBundle.loadString('assets/remote_probe.py');
+    } catch (_) {
+      for (final path in [
+        'assets/remote_probe.py',
+        'mobile/assets/remote_probe.py',
+      ]) {
+        final file = File(path);
+        if (await file.exists()) return file.readAsString();
+      }
+      rethrow;
+    }
+  }
+
   final Future<String> Function() _loadProbe;
   final Future<Directory> Function() _downloadDirectory;
   final Duration requestTimeout;

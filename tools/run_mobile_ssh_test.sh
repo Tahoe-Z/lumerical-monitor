@@ -30,6 +30,7 @@ KbdInteractiveAuthentication no
 PubkeyAuthentication yes
 PermitRootLogin no
 UsePAM no
+StrictModes no
 AllowUsers $(id -un)
 Subsystem sftp internal-sftp
 LogLevel ERROR

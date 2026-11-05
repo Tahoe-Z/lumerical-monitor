@@ -59,7 +59,7 @@ jobs:
           retention-days: 14
 
   ios:
-    name: Unsigned iOS simulator compile
+    name: Unsigned iOS simulator and IPA build
     runs-on: macos-15
     timeout-minutes: 30
     steps:
@@ -75,3 +75,17 @@ jobs:
       - name: Compile iOS simulator app without personal signing
         working-directory: mobile
         run: flutter build ios --simulator --debug --no-codesign
+      - name: Build unsigned iOS release IPA for sideloading
+        working-directory: mobile
+        run: |
+          flutter build ios --release --no-codesign
+          mkdir -p build/ios/ipa_stage/Payload
+          cp -R build/ios/iphoneos/Runner.app build/ios/ipa_stage/Payload/Runner.app
+          cd build/ios/ipa_stage
+          zip -qry ../lumerical-monitor-ios-unsigned.ipa Payload
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lumerical-monitor-ios-unsigned-${{ github.sha }}
+          path: mobile/build/ios/lumerical-monitor-ios-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 14
