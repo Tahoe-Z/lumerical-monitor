@@ -435,7 +435,21 @@ def preview_interpreter():
     return None
 
 
+def _runtime_environment():
+    if os.name != 'nt':
+        library_dir = Path(os.environ.get('LUMERICAL_LIBRARY_DIR') or Path.home() / '.cache/lumerical-monitor/runtime-libs')
+        if library_dir.is_dir():
+            # Lumerical's Linux launcher rebuilds LD_LIBRARY_PATH using its own
+            # extension variable; retain both for the interpreter and launcher.
+            for key in ('LD_LIBRARY_PATH', 'LUMERICAL_LD_LIBRARY_PATH'):
+                previous = os.environ.get(key, '')
+                paths = previous.split(os.pathsep) if previous else []
+                if str(library_dir) not in paths:
+                    os.environ[key] = os.pathsep.join([str(library_dir), *paths])
+
+
 def _api_session(suffix):
+    _runtime_environment()
     try:
         lumapi = importlib.import_module('lumapi')
     except ImportError:
@@ -450,11 +464,6 @@ def _api_session(suffix):
     arguments = {'threads': '1'}
     if os.name != 'nt':
         arguments['platform'] = 'offscreen'
-        # Optional user-managed runtime libraries; never install system packages.
-        library_dir = Path(os.environ.get('LUMERICAL_LIBRARY_DIR') or Path.home() / '.cache/lumerical-monitor/runtime-libs')
-        if library_dir.is_dir():
-            previous = os.environ.get('LD_LIBRARY_PATH', '')
-            os.environ['LD_LIBRARY_PATH'] = str(library_dir) + (os.pathsep + previous if previous else '')
     return constructor(hide=True, serverArgs=arguments)
 
 
@@ -494,6 +503,7 @@ def export_from_session(session, root, project, wavelength_m=1.55e-6, z_m=0):
 def emit(request, source=None):
     """One explicit SSH tool request. Redirect API chatter away from its reply marker."""
     import contextlib
+    _runtime_environment()
     if source and os.name != 'nt':
         python = preview_interpreter()
         if python:
