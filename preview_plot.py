@@ -57,8 +57,11 @@ def render_preview(kind, entry, pixels=(1000, 620)):
             mesh = axis.pcolormesh(x * 1e6, y * 1e6, values.T, shading='auto', cmap='magma', rasterized=True)
             figure.colorbar(mesh, ax=axis, label=entry.get('quantity', '|E|²'))
             axis.set_aspect('equal', adjustable='box')
+            fixed = f" · {entry.get('fixed_axis', 'z')} = {entry.get('fixed_position_m', 0) * 1e6:.5g} µm"
             axis.set(xlabel=entry.get('x_axis', 'x') + ' (µm)', ylabel=entry.get('y_axis', 'y') + ' (µm)',
-                     title=f"{entry.get('name', 'Field')} · λ = {entry['wavelength_m'] * 1e9:.5g} nm")
+                     title=f"{entry.get('name', 'Field')} · λ = {entry['wavelength_m'] * 1e9:.5g} nm{fixed}")
+            if entry.get('sampled'):
+                axis.text(1, 1.01, 'Preview subsampled', transform=axis.transAxes, ha='right', fontsize=7, color='#73726C')
         elif kind == 'spectrum':
             wavelengths = np.asarray(entry['wavelength_m'], dtype=float)
             values = np.asarray(entry['values'], dtype=float)

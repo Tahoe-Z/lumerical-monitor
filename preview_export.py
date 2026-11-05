@@ -60,6 +60,8 @@ def choose_project(root, path):
 
 
 def source_signature(project, root):
+    # Windows short and long names can refer to the same temporary directory.
+    project = Path(project).resolve(strict=True)
     info = project.stat()
     if not stat.S_ISREG(info.st_mode):
         raise ValueError('预览只接受普通工程文件')
