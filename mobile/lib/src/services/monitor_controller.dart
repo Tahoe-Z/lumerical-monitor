@@ -255,7 +255,11 @@ class MonitorController extends ChangeNotifier {
   Future<void> pause() async {
     _paused = true;
     await _stop(
-      isDemo ? ConnectionPhase.demo : ConnectionPhase.paused,
+      isDemo
+          ? ConnectionPhase.demo
+          : _requested
+          ? ConnectionPhase.paused
+          : ConnectionPhase.disconnected,
       requested: _requested,
     );
   }
@@ -263,6 +267,10 @@ class MonitorController extends ChangeNotifier {
   Future<void> resume(HostTrustPrompt prompt) async {
     _paused = false;
     if (_requested && _profile != null && !isDemo) await connect(prompt);
+    if (!_requested && _phase == ConnectionPhase.paused) {
+      _phase = ConnectionPhase.disconnected;
+      _notify();
+    }
   }
 
   Future<void> clearSavedConnection() async {
@@ -276,6 +284,8 @@ class MonitorController extends ChangeNotifier {
       _errorMessage = null;
     } catch (_) {
       _errorMessage = const VaultException().message;
+      _notify();
+      throw const VaultException();
     }
     _notify();
   }
@@ -287,6 +297,8 @@ class MonitorController extends ChangeNotifier {
       _errorMessage = null;
     } catch (_) {
       _errorMessage = const VaultException().message;
+      _notify();
+      throw const VaultException();
     }
     _notify();
   }

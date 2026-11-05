@@ -105,6 +105,21 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets(
+    'retained disconnected data offers reconnect and is marked stale',
+    (tester) async {
+      final controller = _InitializingController();
+      addTearDown(controller.dispose);
+      controller.showDemo();
+      await controller.disconnect();
+      await renderPhone(tester, controller);
+      expect(find.text('数据较旧'), findsOneWidget);
+      await tester.tap(find.byTooltip('刷新数据'));
+      await tester.pumpAndSettle();
+      expect(controller.connections, 1);
+    },
+  );
+
   testWidgets('synthetic demo renders without overflow and opens every tab', (
     tester,
   ) async {

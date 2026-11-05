@@ -57,8 +57,38 @@ void main() {
       await controller.pause();
       await controller.resume((_) async => true);
       expect(remotes.length, 2);
+      expect(controller.phase, ConnectionPhase.disconnected);
     },
   );
+
+  for (final resetTrust in [false, true]) {
+    test(
+      'failed secure ${resetTrust ? 'trust reset' : 'deletion'} reports failure and retains credentials',
+      () async {
+        final store = LockedStore();
+        final vault = SecureVault(store: store);
+        await vault.saveConnection(sample, [hostKey], isCurrent: () => true);
+        final controller = MonitorController(
+          vault: vault,
+          remoteFactory: FakeRemote.new,
+        );
+        addTearDown(controller.dispose);
+        await controller.initialize();
+        store.locked = true;
+        await expectLater(
+          resetTrust
+              ? controller.clearHostTrust()
+              : controller.clearSavedConnection(),
+          throwsA(isA<VaultException>()),
+        );
+        expect(controller.profile, isNotNull);
+        expect(controller.errorMessage, isNotNull);
+        expect(controller.errorMessage, isNot(contains(sample.privateKey)));
+        expect(await vault.loadProfile(), isNotNull);
+        expect(await vault.checkHost(hostKey), isTrue);
+      },
+    );
+  }
 
   test('canceling the host prompt saves neither profile nor trust', () async {
     final vault = SecureVault(store: MemorySecretStore());
@@ -185,4 +215,19 @@ class FakeRemote implements RemoteMonitor {
     String path, {
     void Function(int, int)? onProgress,
   }) async => throw UnimplementedError();
+}
+
+class LockedStore extends MemorySecretStore {
+  bool locked = false;
+  @override
+  Future<void> write(String key, String value) async {
+    if (locked) throw StateError(sample.privateKey);
+    await super.write(key, value);
+  }
+
+  @override
+  Future<void> delete(String key) async {
+    if (locked) throw StateError(sample.privateKey);
+    await super.delete(key);
+  }
 }

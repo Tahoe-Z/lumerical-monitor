@@ -350,7 +350,9 @@ class _MonitorHomeState extends State<MonitorHome> with WidgetsBindingObserver {
               IconButton(
                 tooltip: '刷新数据',
                 onPressed: () => _run(
-                  () => hasData
+                  () =>
+                      controller.phase == ConnectionPhase.connected ||
+                          controller.isDemo
                       ? controller.refresh()
                       : controller.connect(_trustHost),
                 ),
@@ -429,8 +431,9 @@ class _ConnectionStrip extends StatelessWidget {
     final stale =
         updated != null &&
         !controller.isDemo &&
-        DateTime.now().difference(updated).inSeconds >
-            (controller.profile?.refreshSeconds ?? 15) * 2;
+        (phase != ConnectionPhase.connected ||
+            DateTime.now().difference(updated).inSeconds >
+                (controller.profile?.refreshSeconds ?? 15) * 2);
     return Padding(
       padding: const EdgeInsets.fromLTRB(22, 0, 22, 10),
       child: Row(
