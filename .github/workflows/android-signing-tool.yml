@@ -1,0 +1,26 @@
+name: Android signing tool
+on:
+  push:
+    branches: [feature/mobile-previews]
+    paths: ['.github/workflows/android-signing-tool.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  export-tool:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Collect SDK apksigner for offline private signing
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/android-signing-tool"
+          signing_tool="$(find "$ANDROID_HOME/build-tools" -path '*/lib/apksigner.jar' | sort -V | tail -1)"
+          test -n "$signing_tool"
+          cp "$signing_tool" "$RUNNER_TEMP/android-signing-tool/apksigner.jar"
+          curl --fail --silent --show-error 'https://android.googlesource.com/platform/tools/apksig/+/refs/heads/main/LICENSE?format=TEXT' | base64 --decode > "$RUNNER_TEMP/android-signing-tool/LICENSE"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-apksigner
+          path: ${{ runner.temp }}/android-signing-tool/
+          retention-days: 2
+          if-no-files-found: error
