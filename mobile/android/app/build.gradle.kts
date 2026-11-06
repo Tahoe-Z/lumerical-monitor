@@ -18,7 +18,7 @@ if (releaseSigningFile.exists()) {
 }
 
 android {
-    namespace = "org.lumericalmonitor.lumerical_monitor"
+    namespace = "org.lumericalmonitor.mobile"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -29,7 +29,7 @@ android {
 
     defaultConfig {
         // Independent open-source application identifier.
-        applicationId = "org.lumericalmonitor.lumerical_monitor"
+        applicationId = "org.lumericalmonitor.mobile"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = 26

@@ -58,7 +58,7 @@ flutter build apk --release --target-platform android-arm64
 
 **保留现有数据的覆盖升级必须使用现有安装对应的签名私钥，保持 applicationId 不变，并提高 versionCode。** 相同包名或相同证书显示名称无法替代相同签名密钥。找不到原私钥时，不应把新签名 APK 当作兼容更新，也不应要求用户先卸载旧版。
 
-本次预览扩展保持安全存储位置、文档键名、序列化格式及 `flutter_secure_storage` 版本/选项不变；版本号提升到 `0.2.0+2`。存储兼容检查无法替代签名核验和真实设备的覆盖安装验证。
+本次 Android 发布使用独立包名 `org.lumericalmonitor.mobile`，桌面名称为「Lumerical Monitor 新版」，可与旧测试包并存。首次需要重新连接服务器；旧 App 的私有数据不会自动共享到新版。后续更新应一直使用本次独立版本的固定签名。版本为 `0.2.0+2`。
 
 ## iPhone / iPad
 
