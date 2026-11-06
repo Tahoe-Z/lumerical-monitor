@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter/services.dart';
@@ -10,6 +11,7 @@ import 'package:path_provider/path_provider.dart';
 import '../domain/connection.dart';
 import '../domain/profile.dart';
 import 'protocol.dart';
+import 'preview_transport.dart';
 
 export '../domain/connection.dart';
 
@@ -23,6 +25,15 @@ abstract interface class RemoteMonitor {
   Future<File> download(String path, {void Function(int, int)? onProgress});
   Future<void> cancelDownload();
   Future<void> close();
+}
+
+abstract interface class PreviewRemote {
+  Future<Map<String, dynamic>> preparePreview(
+    String path,
+    double wavelengthM,
+    double zM,
+  );
+  Future<void> cancelPreview();
 }
 
 class CancellationToken {
@@ -203,7 +214,7 @@ Future<File> receiveDownload({
   }
 }
 
-class SshMonitor implements RemoteMonitor {
+class SshMonitor implements RemoteMonitor, PreviewRemote {
   SshMonitor({
     Future<String> Function()? loadProbe,
     Future<Directory> Function()? downloadDirectory,
@@ -213,13 +224,17 @@ class SshMonitor implements RemoteMonitor {
            downloadDirectory ?? getApplicationDocumentsDirectory;
 
   static Future<String> _defaultLoadProbe() async {
+    return attachPreviewHelper(
+      await _loadSource('remote_probe.py'),
+      await _loadSource('preview_export.py'),
+    );
+  }
+
+  static Future<String> _loadSource(String name) async {
     try {
-      return await rootBundle.loadString('assets/remote_probe.py');
+      return await rootBundle.loadString('assets/$name');
     } catch (_) {
-      for (final path in [
-        'assets/remote_probe.py',
-        'mobile/assets/remote_probe.py',
-      ]) {
+      for (final path in ['assets/$name', 'mobile/assets/$name']) {
         final file = File(path);
         if (await file.exists()) return file.readAsString();
       }
@@ -237,6 +252,9 @@ class SshMonitor implements RemoteMonitor {
   ConnectionProfile? _profile;
   CancellationToken _connection = CancellationToken();
   CancellationToken? _downloadCancellation;
+  CancellationToken? _previewCancellation;
+  SSHSession? _previewSession;
+  Future<void>? _previewStopping;
   Future<File>? _downloadFuture;
   Future<void> _requestTail = Future.value();
 
@@ -488,6 +506,105 @@ class SshMonitor implements RemoteMonitor {
   }
 
   @override
+  Future<Map<String, dynamic>> preparePreview(
+    String path,
+    double wavelengthM,
+    double zM,
+  ) async {
+    if (_previewCancellation != null) throw const MonitorException('预览正在生成');
+    if (!wavelengthM.isFinite || wavelengthM <= 0 || !zM.isFinite) {
+      throw const MonitorException('波长和截面参数无效');
+    }
+    final client = _client;
+    if (client == null || client.isClosed) {
+      throw const MonitorException('请先连接服务器');
+    }
+    final connection = _connection;
+    final cancellation = CancellationToken();
+    _previewCancellation = cancellation;
+    SSHSession? session;
+    try {
+      final helper = await cancellation.wait(_loadSource('preview_export.py'));
+      connection.check();
+      final active = await acquireResource<SSHSession>(
+        client.execute(probeCommand),
+        cancellation: cancellation,
+        isCurrent: () => !connection.isCancelled,
+        dispose: (value) => value.channel.destroy(),
+      );
+      session = active;
+      _previewSession = session;
+      final output = BytesBuilder(copy: false);
+      final reading = () async {
+        await for (final chunk in active.stdout) {
+          if (output.length + chunk.length > maxReplyBytes) {
+            throw const MonitorException('预览数据超出大小上限');
+          }
+          output.add(chunk);
+        }
+      }();
+      final completed = Future.wait<void>([
+        reading,
+        _drainErrors(active.stderr),
+        active.done,
+      ]);
+      unawaited(
+        completed.then<void>((_) {}, onError: (Object _, StackTrace _) {}),
+      );
+      final source = previewToolSource(helper, {
+        'root': _profile!.root,
+        'path': path,
+        'wavelength_m': wavelengthM,
+        'z_m': zM,
+      });
+      active.stdin.add(
+        Uint8List.fromList(
+          utf8.encode('${base64Encode(utf8.encode(source))}\n'),
+        ),
+      );
+      await cancellation.wait(active.stdin.close().timeout(requestTimeout));
+      await cancellation.wait(completed.timeout(const Duration(seconds: 180)));
+      connection.check();
+      return decodePreviewOutput(
+        utf8.decode(output.takeBytes()),
+        active.exitCode,
+      );
+    } on MonitorException {
+      rethrow;
+    } catch (_) {
+      throw const MonitorException('预览生成连接失败或超时；连接恢复后请读取缓存');
+    } finally {
+      if (session != null) {
+        if (session.exitCode == null) {
+          await _stopPreview(session);
+        } else {
+          session.channel.destroy();
+        }
+      }
+      if (identical(_previewCancellation, cancellation)) {
+        _previewCancellation = null;
+        _previewSession = null;
+        _previewStopping = null;
+      }
+    }
+  }
+
+  @override
+  Future<void> cancelPreview() async {
+    final session = _previewSession;
+    final stopping = session == null ? null : _stopPreview(session);
+    _previewCancellation?.cancel();
+    await stopping;
+  }
+
+  Future<void> _stopPreview(SSHSession session) =>
+      _previewStopping ??= stopPreviewChannel(
+        sendTerm: () => session.kill(SSHSignal.TERM),
+        exited: session.done,
+        destroy: () => session.channel.destroy(),
+      );
+
+  @override
   Future<void> cancelDownload() async {
     _downloadCancellation?.cancel();
     _downloadSession?.channel.destroy();
@@ -502,6 +619,7 @@ class SshMonitor implements RemoteMonitor {
   @override
   Future<void> close() async {
     _connection.cancel();
+    await cancelPreview();
     final client = _client, socket = _socket, lines = _lines;
     _client = null;
     _socket = null;

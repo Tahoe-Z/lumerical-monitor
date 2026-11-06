@@ -744,6 +744,9 @@ def snapshot(root, licenses=True):
 def dispatch(request):
     root = Path(request['root']).resolve(strict=True)
     op = request['op']
+    if op == 'preview':
+        from preview_export import read_preview
+        return read_preview(root, request.get('path', '.'))
     if op == 'snapshot':
         return snapshot(root, licenses=request.get('licenses', True) is not False)
     path = project_path(root, request.get('path', '.'))

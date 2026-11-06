@@ -186,6 +186,10 @@ void main() {
       );
       final file = await remote.download('binary.bin');
       expect(await file.readAsBytes(), [0, 13, 10, 255, 42]);
+      final preview = await remote.request('preview', path: 'synthetic.fsp');
+      expect(preview['available'], isTrue);
+      expect(preview['stale'], isFalse);
+      expect((preview['document'] as Map)['spectra'][0]['values'], [-.1, 1.1]);
       await expectLater(
         remote.request('tail', path: '../outside.txt'),
         throwsA(isA<MonitorException>()),

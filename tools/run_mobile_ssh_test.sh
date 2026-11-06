@@ -14,6 +14,18 @@ mkdir "$ssh_test_root/project"
 printf 'synthetic log\n' > "$ssh_test_root/project/sample.txt"
 printf '\000\015\012\377\052' > "$ssh_test_root/project/binary.bin"
 printf 'outside root\n' > "$ssh_test_root/outside.txt"
+python3 - "$ssh_test_root/project" <<'PY'
+import json,sys
+from pathlib import Path
+root=Path(sys.argv[1]); project=root/'synthetic.fsp'
+project.write_bytes(b'synthetic fixture, not a solver project')
+info=project.stat()
+doc={'version':1,'source':{'path':project.name,'size':info.st_size,'mtime_ns':info.st_mtime_ns},
+     'generated_utc':'synthetic','model':{'plane':'xy','z_m':0,'layers':[]},'fields':[],
+     'spectra':[{'name':'synthetic','wavelength_m':[1.5e-6,1.6e-6],'values':[-.1,1.1]}],
+     'parameters':[],'warnings':['synthetic test only']}
+Path(str(project)+'.preview.json').write_text(json.dumps(doc))
+PY
 ssh-keygen -q -t ed25519 -N '' -C '' -f "$ssh_test_root/client"
 ssh-keygen -q -t ed25519 -N '' -C '' -f "$ssh_test_root/host"
 cp "$ssh_test_root/client.pub" "$ssh_test_root/authorized_keys"

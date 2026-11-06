@@ -2,6 +2,8 @@
 profile*.json
 !profile.example.json
 profile*.json.tmp
+*.preview.json
+.*.preview-*.tmp
 .env
 .env.*
 !.env.example

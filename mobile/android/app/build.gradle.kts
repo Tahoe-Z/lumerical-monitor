@@ -1,11 +1,24 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+// Optional private signing file. Never fall back to a newly generated debug key
+// for release updates: a different key would reject an existing installation.
+val releaseSigning = Properties()
+val releaseSigningFile = rootProject.file("key.properties")
+if (releaseSigningFile.exists()) {
+    releaseSigningFile.inputStream().use { releaseSigning.load(it) }
+    for (name in listOf("storeFile", "storePassword", "keyAlias", "keyPassword")) {
+        require(!releaseSigning.getProperty(name).isNullOrBlank()) { "Incomplete private release signing configuration" }
+    }
+}
+
 android {
-    namespace = "org.lumericalmonitor.lumerical_monitor"
+    namespace = "org.lumericalmonitor.mobile"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -16,7 +29,7 @@ android {
 
     defaultConfig {
         // Independent open-source application identifier.
-        applicationId = "org.lumericalmonitor.lumerical_monitor"
+        applicationId = "org.lumericalmonitor.mobile"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = 26
@@ -29,11 +42,20 @@ android {
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        if (releaseSigningFile.exists()) {
+            create("privateRelease") {
+                storeFile = file(releaseSigning.getProperty("storeFile"))
+                storePassword = releaseSigning.getProperty("storePassword")
+                keyAlias = releaseSigning.getProperty("keyAlias")
+                keyPassword = releaseSigning.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // Development builds use an ephemeral debug signing key; use private release signing for store distribution.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = if (releaseSigningFile.exists()) signingConfigs.getByName("privateRelease") else null
         }
     }
 }

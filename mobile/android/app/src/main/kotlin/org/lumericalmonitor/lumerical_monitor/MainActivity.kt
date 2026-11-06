@@ -1,4 +1,4 @@
-package org.lumericalmonitor.lumerical_monitor
+package org.lumericalmonitor.mobile
 
 import io.flutter.embedding.android.FlutterActivity
 
